@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { findMemoryById, updateMemory as _updateMemory, deleteMemory as _deleteMemory } from '@/lib/data/memories'
 import { updateMemorySchema } from '@/lib/data/validators'
@@ -17,6 +18,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
 
     const memory = await findMemoryById(id, result.id)
@@ -30,6 +33,8 @@ export const PATCH = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
 
     let body: unknown
@@ -66,6 +71,8 @@ export const DELETE = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
 
     const isBearer = request.headers.get('authorization')?.startsWith('Bearer ') ?? false

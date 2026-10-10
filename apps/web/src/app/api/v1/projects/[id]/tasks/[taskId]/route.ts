@@ -4,6 +4,7 @@ import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLi
 import { verifyProjectOwnership } from '@/lib/data/projects'
 import { findTaskById, updateTask, deleteTask } from '@/lib/data/tasks'
 import { updateTaskSchema } from '@/lib/data/validators'
+import { withoutVorathTaskFields } from '@/lib/vorath-access'
 
 type Params = { params: Promise<{ id: string; taskId: string }> }
 
@@ -40,7 +41,7 @@ export const PUT = withRateLimit(
     const parsed = updateTaskSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const task = await updateTask(taskId, id, parsed.data)
+    const task = await updateTask(taskId, id, withoutVorathTaskFields(result.id, parsed.data))
     if (!task) return jsonError('Task not found', 404)
     return jsonData(task)
   }),

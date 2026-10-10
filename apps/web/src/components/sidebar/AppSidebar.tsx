@@ -13,6 +13,7 @@ import { RealmList } from '@/components/sidebar/RealmList'
 import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
 import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { KairosSidebarContent } from '@/components/sidebar/KairosSidebarContent'
+import { useVorath } from '@/hooks/useVorath'
 import { SidebarHome } from '@/components/sidebar/SidebarHome'
 import { SidebarFavorites } from '@/components/sidebar/SidebarFavorites'
 import { SidebarBottom } from '@/components/sidebar/SidebarBottom'
@@ -46,7 +47,8 @@ export function AppSidebar({
   const colors = useThemeStore((s) => s.colors)
   const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm, maybeAutoCollapseForViewport } = useSidebarStore()
   const pathname = usePathname()
-  const onKairos = pathname?.startsWith('/vorath') ?? false
+  const vorath = useVorath()
+  const onKairos = vorath && (pathname?.startsWith('/vorath') ?? false)
 
   useEffect(() => {
     maybeAutoCollapseForViewport()

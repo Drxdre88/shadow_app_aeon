@@ -5,6 +5,7 @@ import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLi
 import { verifyProjectOwnership } from '@/lib/data/projects'
 import { findTasks, createTask } from '@/lib/data/tasks'
 import { createTaskSchema } from '@/lib/data/validators'
+import { withoutVorathTaskFields } from '@/lib/vorath-access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -54,7 +55,7 @@ export const POST = withRateLimit(
     const parsed = createTaskSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const task = await createTask(id, parsed.data)
+    const task = await createTask(id, withoutVorathTaskFields(result.id, parsed.data))
     return jsonData(task, 201)
   }),
   API_WRITE_LIMIT

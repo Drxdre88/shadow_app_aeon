@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { searchMemoriesHybrid } from '@/lib/kairos/memory-search'
 import { isEvalRead, noteAgentReads } from '@/lib/kairos/agent-reads'
@@ -9,6 +10,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const url = request.nextUrl
     // Phase 3B: q is optional when dominionId is given. Only set query when

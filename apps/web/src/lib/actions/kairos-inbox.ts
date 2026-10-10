@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { MIND_NAME } from '@/lib/kairos/identity'
-import { requireAuth } from '@/lib/actions/helpers'
+import { requireVorath } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
@@ -29,7 +29,7 @@ export async function decideKairosInboxProposal(
   verdict: 'approve' | 'veto',
   reason?: string,
 ): Promise<DecideKairosInboxProposalResult> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = decideSchema.safeParse({ id, verdict, reason })
   if (!parsed.success) return { ok: false, reason: 'invalid_input' }
   const input = parsed.data
@@ -53,13 +53,13 @@ export type KairosInboxPayload = Awaited<ReturnType<typeof getKairosInbox>> & { 
 // ownerModelEnabled is set only while KAIROS_OWNER_MODEL is on, so the inbox
 // card skips its own server round-trip when off (payload unchanged when off).
 export async function listKairosInbox(): Promise<KairosInboxPayload> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const inbox = await getKairosInbox(userId)
   return ownerModelMode() === 'on' ? { ...inbox, ownerModelEnabled: true } : inbox
 }
 
 export async function answerKairosInboxAsk(questionMemoryId: string, answer: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const result = await answerKairosAsk(
     userId,
     memoryIdSchema.parse(questionMemoryId),
@@ -79,14 +79,14 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
 // The owner's "skip": the question leaves the backlog without an answer and
 // without a negative outcome.
 export async function dismissKairosInboxAsk(questionMemoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const result = await dismissKairosAsk(userId, memoryIdSchema.parse(questionMemoryId))
   if ('error' in result) throw new Error(`${MIND_NAME} question not found`)
   return { id: result.id }
 }
 
 export async function acceptKairosInboxProposal(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const result = await acceptInboxProposal(userId, memoryIdSchema.parse(memoryId))
 
   if (!result.ok) {
@@ -96,7 +96,7 @@ export async function acceptKairosInboxProposal(memoryId: string) {
 }
 
 export async function dismissKairosInboxProposal(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const result = await dismissInboxMemory(userId, memoryIdSchema.parse(memoryId))
 
   if (!result.ok) throw new Error('Proposal not found')

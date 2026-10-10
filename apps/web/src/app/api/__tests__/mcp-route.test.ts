@@ -3,11 +3,11 @@
  * The shipped MCP route, driven through its real POST handler: per-profile
  * tool lists, profile/transport refusals and the destructive-tool roster.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/api/auth', () => ({
-  authenticateRequest: vi.fn(async () => ({ id: 'u1', role: 'user' })),
+  authenticateRequest: vi.fn(async (req: Request) => ({ id: req.headers.get('authorization')!.slice(7), role: 'user' })),
   isApiUser: (r: unknown) => !!r && typeof r === 'object' && 'id' in r,
 }))
 
@@ -15,11 +15,16 @@ import { POST } from '../[transport]/route'
 
 type Tool = { name: string; annotations?: { destructiveHint?: boolean } }
 
-async function call(query: string, transport = 'mcp', body: Record<string, unknown> = { method: 'tools/list', params: {} }) {
+async function call(
+  query: string,
+  transport = 'mcp',
+  body: Record<string, unknown> = { method: 'tools/list', params: {} },
+  token = 'u1'
+) {
   const req = new Request(`http://localhost/api/${transport}${query}`, {
     method: 'POST',
     headers: {
-      authorization: 'Bearer aeon_k1_test',
+      authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
       'mcp-protocol-version': '2025-06-18',
@@ -29,15 +34,18 @@ async function call(query: string, transport = 'mcp', body: Record<string, unkno
   return POST(req, { params: Promise.resolve({ transport }) })
 }
 
-async function listTools(query = ''): Promise<Tool[]> {
-  const res = await call(query)
+async function rpc<T>(res: Response): Promise<T> {
   expect(res.status).toBe(200)
   const text = await res.text()
   const json = text.startsWith('{') ? text : text.split('\n').find((l) => l.startsWith('data:'))!.slice(5)
-  return (JSON.parse(json) as { result: { tools: Tool[] } }).result.tools
+  return JSON.parse(json) as T
 }
 
-const names = async (query: string) => new Set((await listTools(query)).map((t) => t.name))
+async function listTools(query = '', token = 'u1'): Promise<Tool[]> {
+  return (await rpc<{ result: { tools: Tool[] } }>(await call(query, 'mcp', undefined, token))).result.tools
+}
+
+const names = async (query: string, token = 'u1') => new Set((await listTools(query, token)).map((t) => t.name))
 
 const REALM = 'list_realms'
 const TASK = ['list_tasks', 'get_task_detail', 'create_task']
@@ -107,5 +115,63 @@ describe('MCP route — profiles over the real handler', () => {
   it('marks exactly these tools destructive (each asks to confirm on capable clients)', async () => {
     const destructive = (await listTools('')).filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name).sort()
     expect(destructive).toEqual(DESTRUCTIVE)
+  })
+})
+
+const OWNER = 'owner-1'
+const CORE_SIZES = { all: 72, board: 72, hangar: 20 } as const
+
+describe('MCP route — Vorath is owner-only', () => {
+  beforeEach(() => vi.stubEnv('VORATH_USER_IDS', OWNER))
+  afterEach(() => vi.unstubAllEnvs())
+
+  it.each(['all', 'board', 'vorath', 'hangar'] as const)('owner keeps the full %s profile', async (p) => {
+    expect((await names(`?profile=${p}`, OWNER)).size).toBe(PROFILE_SIZES[p])
+  })
+
+  it.each(['all', 'board', 'hangar'] as const)('a non-owner sees only PM-core tools in %s', async (p) => {
+    expect((await names(`?profile=${p}`)).size).toBe(CORE_SIZES[p])
+  })
+
+  it('a non-owner gets no tools at all from the vorath profile', async () => {
+    const reply = await rpc<{ result?: unknown; error?: { code: number } }>(await call('?profile=vorath'))
+    expect(reply.result).toBeUndefined()
+    expect(reply.error?.code).toBe(-32601)
+  })
+
+  it('a non-owner tools/list carries zero Vorath tools', async () => {
+    const core = await names('')
+    const owned = await names('', OWNER)
+    const vorath = [...owned].filter((t) => !core.has(t))
+    expect(vorath.length).toBe(PROFILE_SIZES.all - CORE_SIZES.all)
+    for (const t of await names('?profile=vorath', OWNER)) expect(core.has(t), t).toBe(false)
+    for (const t of [...MEMORY, DOMINION, SESSION, HANGAR, 'set_project_kairos_feed']) expect(core.has(t), t).toBe(false)
+    for (const t of [REALM, ...TASK, ...BOARD_ONLY]) expect(core, t).toContain(t)
+  })
+
+  it('refuses a non-owner calling a Vorath tool directly', async () => {
+    for (const name of ['search_memories', 'set_project_kairos_feed', 'list_dominions']) {
+      const body = { method: 'tools/call', params: { name, arguments: { query: 'x', projectId: 'p', feed: null } } }
+      const reply = await rpc<{ result?: { isError?: boolean; content: { text: string }[] }; error?: { message: string } }>(
+        await call('', 'mcp', body)
+      )
+      const message = reply.error?.message ?? reply.result?.content[0]?.text
+      expect(reply.error ?? reply.result?.isError, name).toBeTruthy()
+      expect(message, name).toBe(`Tool ${name} not found`)
+    }
+  })
+
+  it('locks everyone out in production when no owner id is configured', async () => {
+    vi.stubEnv('VORATH_USER_IDS', '')
+    vi.stubEnv('KAIROS_OPERATOR_USER_ID', '')
+    vi.stubEnv('NODE_ENV', 'production')
+    expect((await names('', OWNER)).size).toBe(CORE_SIZES.all)
+  })
+
+  it('falls back to KAIROS_OPERATOR_USER_ID as the owner', async () => {
+    vi.stubEnv('VORATH_USER_IDS', '')
+    vi.stubEnv('KAIROS_OPERATOR_USER_ID', OWNER)
+    vi.stubEnv('NODE_ENV', 'production')
+    expect((await names('', OWNER)).size).toBe(PROFILE_SIZES.all)
   })
 })

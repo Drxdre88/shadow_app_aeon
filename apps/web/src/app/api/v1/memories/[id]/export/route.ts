@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { findMemoryById } from '@/lib/data/memories'
 import { memoryToMarkdown, MARKDOWN_CONTENT_TYPE } from '@/lib/data/memoriesMarkdown'
@@ -13,6 +14,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
 
     const memory = await findMemoryById(id, result.id)

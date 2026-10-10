@@ -5,6 +5,7 @@ import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { verifyProjectOwnership } from '@/lib/data/projects'
 import { createTasksBatch } from '@/lib/data/tasks'
 import { createTaskSchema } from '@/lib/data/validators'
+import { withoutVorathTaskFields } from '@/lib/vorath-access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -30,7 +31,7 @@ export const POST = withRateLimit(
     const parsed = batchTasksSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const tasks = parsed.data.tasks.map(t => ({
+    const tasks = parsed.data.tasks.map(t => withoutVorathTaskFields(result.id, {
       ...t,
       startDate: t.startDate ?? undefined,
       endDate: t.endDate ?? undefined,

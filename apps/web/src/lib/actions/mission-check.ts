@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireMember, requireOwner } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import {
   findMissionCheckBoard as _findMissionCheckBoard,
   setProjectMissionCheck as _setProjectMissionCheck,
@@ -14,6 +15,7 @@ import { missionCheckMode } from '@/lib/kairos/mission-check/flag'
 
 export async function getMissionCheckSetting(projectId: string) {
   const userId = await requireMember(projectId)
+  if (!canUseVorath(userId)) return { on: false, canToggle: false, available: false }
   const board = await _findMissionCheckBoard(projectId)
   if (!board) throw new Error('Project not found')
   return { on: isMissionCheckOn(board.settings), canToggle: board.userId === userId, available: missionCheckMode() !== 'off' }
@@ -21,6 +23,7 @@ export async function getMissionCheckSetting(projectId: string) {
 
 export async function setMissionCheck(projectId: string, on: boolean) {
   const userId = await requireOwner(projectId)
+  assertVorath(userId)
   const parsed = setMissionCheckInputSchema.parse({ on })
   const project = await _setProjectMissionCheck(projectId, userId, parsed.on)
   if (!project) throw new Error('Only the person who created this board can change mission checks')

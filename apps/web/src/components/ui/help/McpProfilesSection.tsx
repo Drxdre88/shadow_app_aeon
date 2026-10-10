@@ -1,6 +1,7 @@
 'use client'
 
 import { Section } from './shared'
+import { useVorath } from '@/hooks/useVorath'
 
 const PROFILES = [
   { id: 'all', label: 'Everything (default)', covers: 'Every Aeon tool. Used when no profile is set, so existing connectors are unchanged.' },
@@ -9,7 +10,11 @@ const PROFILES = [
   { id: 'hangar', label: 'Hangar', covers: 'Hangar repo registry, agent sessions (including runner claims), realms, plus the cards and memory tools a mission runner reads: list and open cards, search and save memories.' },
 ] as const
 
+const OWNER_ONLY_PROFILES = new Set<string>(['vorath', 'hangar'])
+
 export function McpProfilesSection() {
+  const vorath = useVorath()
+  const profiles = vorath ? PROFILES : PROFILES.filter((p) => !OWNER_ONLY_PROFILES.has(p.id))
   return (
     <Section title="Tool Profiles">
       <div className="space-y-3">
@@ -18,7 +23,7 @@ export function McpProfilesSection() {
           focused tool list. Fewer tools means faster, more accurate tool picks.
         </p>
         <div className="space-y-2">
-          {PROFILES.map((p) => (
+          {profiles.map((p) => (
             <div key={p.id} className="text-xs">
               <p className="font-mono text-white">/api/mcp?profile={p.id}</p>
               <p className="text-slate-500">

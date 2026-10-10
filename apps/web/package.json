@@ -23,7 +23,11 @@
     "db:studio": "drizzle-kit studio",
     "eval:retrieval": "node scripts/eval-retrieval.mjs",
     "backfill:embeddings": "node scripts/backfill-embeddings.mjs",
-    "smoke:auth": "node scripts/smoke-auth.mjs"
+    "smoke:auth": "node scripts/smoke-auth.mjs",
+    "changelog:sync": "node scripts/changelog-sync.mjs sync",
+    "changelog:check": "node scripts/changelog-sync.mjs check",
+    "changelog:draft": "node scripts/changelog-sync.mjs draft",
+    "changelog:test": "node --test scripts/changelog-sync.test.mjs"
   },
   "dependencies": {
     "@aeon/shared": "*",

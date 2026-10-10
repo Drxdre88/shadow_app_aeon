@@ -74,7 +74,7 @@ describe('Morning cockpit MCP <-> REST parity', () => {
     expect(mcpSrc).toMatch(/getUserId\(extra\)/)
     expect(restSrc).toMatch(/authenticateRequest\(/)
     expect(restSrc).toMatch(/isApiUser\(result\)/)
-    expect(read(ACTION_FILE)).toMatch(/await requireAuth\(\)/)
+    expect(read(ACTION_FILE)).toMatch(/await (requireAuth|requireVorath|safeRequireVorath)\(\)/)
   })
 
   it('is registered on the MCP server', () => {

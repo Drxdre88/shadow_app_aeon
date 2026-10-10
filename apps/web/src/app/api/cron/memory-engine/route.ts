@@ -6,6 +6,7 @@ import { MemoryEngine } from '@/lib/kairos/engine/memory-engine'
 import { buildNightSteps } from '@/lib/kairos/engine/registry'
 import type { EngineRunResult } from '@/lib/kairos/engine/types'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // Memory engine nightly run (docs/kairos/32 §2), 01:30 UTC. Per user with an
 // active Dominion: MemoryEngine.runNight over the registry's steps (incl. the
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   const deadline = Date.now() + ENGINE_BUDGET_MS
   let userIds: string[]
   try {
-    userIds = await listMemoryEngineUserIds()
+    userIds = (await listMemoryEngineUserIds()).filter((userId) => canUseVorath(userId))
   } catch (err) {
     // No user to attach a trace to — the log is the only record.
     console.error(`[cron:${CRON_NAME}] listing users failed:`, err)

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireMember, requireOwner } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import {
   findAiDoneBoard as _findAiDoneBoard,
   setProjectAiDone as _setProjectAiDone,
@@ -14,6 +15,7 @@ import { aiDoneEnabled } from '@/lib/kairos/ai-done/flag'
 
 export async function getAiDoneSetting(projectId: string) {
   const userId = await requireMember(projectId)
+  if (!canUseVorath(userId)) return { on: false, canToggle: false, available: false }
   const board = await _findAiDoneBoard(projectId)
   if (!board) throw new Error('Project not found')
   return { on: isAiDoneOn(board.settings), canToggle: board.userId === userId, available: aiDoneEnabled() }
@@ -21,6 +23,7 @@ export async function getAiDoneSetting(projectId: string) {
 
 export async function setAiDone(projectId: string, on: boolean) {
   const userId = await requireOwner(projectId)
+  assertVorath(userId)
   const parsed = setAiDoneInputSchema.parse({ on })
   const project = await _setProjectAiDone(projectId, userId, parsed.on)
   if (!project) throw new Error('Only the person who created this board can change Vorath checks')

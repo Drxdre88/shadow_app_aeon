@@ -5,6 +5,7 @@ import { MissionResultSection } from '../MissionResultSection'
 
 vi.mock('@/lib/actions/hangar-autopilot', () => ({ answerAndRelaunch: vi.fn(), createFollowUpCards: vi.fn() }))
 vi.mock('@/components/ui/Toast', () => ({ toast: vi.fn() }))
+vi.mock('@/hooks/useVorath', () => ({ useVorath: () => true }))
 
 afterEach(cleanup)
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireEditor } from './helpers'
+import { assertVorath } from '@/lib/vorath-access'
 import {
   hangarResultEnvelopeSchema,
   missionAnswersSchema,
@@ -24,7 +25,7 @@ import { launchCardMission, type LaunchOverride } from './hangar-launch'
 // through the shared launch path, so the one-live-mission guard still holds.
 
 async function readEditableMission(projectId: string, taskId: string) {
-  await requireEditor(projectId)
+  assertVorath(await requireEditor(projectId))
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
   const hangar = ((task.metadata ?? {}) as Record<string, unknown>).hangar

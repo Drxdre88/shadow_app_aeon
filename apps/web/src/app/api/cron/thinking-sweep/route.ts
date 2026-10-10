@@ -15,6 +15,7 @@ import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
 import { PREDICTION_CHECK_CRON, runPredictionSettlement, type PredictionCheckResult } from '@/lib/kairos/predictions/check'
 import { sweepExpiredProposals, type ProposalExpirySweepResult } from '@/lib/kairos/proposal-decision'
 import { runSweepHooks } from '@/lib/kairos/moment'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos thinking queue sweep (docs/kairos/32 §3, 33). Hourly ('50 * * * *').
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
   // here (e.g. listing users) must not stop the sweep below.
   const plans: Array<{ userId: string; planned: number; errors?: string[] }> = []
   try {
-    for (const userId of await listMemoryEngineUserIds()) {
+    for (const userId of (await listMemoryEngineUserIds()).filter((id) => canUseVorath(id))) {
       try {
         const res = await queue.planDue(userId, now, { skipKinds: SWEEP_PLAN_SKIP_KINDS })
         plans.push({
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
     console.error('[cron:thinking-sweep] planning users failed:', err)
   }
 
-  const userIds = await listUsersNeedingSweep(SWEEP_FALLBACK_KINDS)
+  const userIds = (await listUsersNeedingSweep(SWEEP_FALLBACK_KINDS)).filter((userId) => canUseVorath(userId))
   const users: Array<{ userId: string; result?: SweepResult; error?: string }> = []
 
   for (const userId of userIds) {

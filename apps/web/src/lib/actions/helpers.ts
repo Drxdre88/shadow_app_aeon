@@ -3,11 +3,19 @@
 import { auth } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { AiForbiddenError } from './errors'
+import { assertVorath } from '@/lib/vorath-access'
 
 export async function requireAuth() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
   return session.user.id
+}
+
+/** Signed-in AND allowed to use Vorath; anyone else gets a generic refusal. */
+export async function requireVorath() {
+  const userId = await requireAuth()
+  assertVorath(userId)
+  return userId
 }
 
 // Non-throwing variant for actions that surface a structured failure

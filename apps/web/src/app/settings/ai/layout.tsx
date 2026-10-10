@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { canUseVorath } from '@/lib/vorath-access'
 import { getWorkspaceProjects } from '@/lib/actions/projects'
 import { ensurePersonalWorkspace } from '@/lib/actions/workspaces'
 import { KairosShell } from '@/components/kairos/KairosShell'
@@ -11,6 +12,7 @@ export const maxDuration = 300
 export default async function AiSettingsLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user) redirect('/login')
+  if (!canUseVorath(session.user.id)) notFound()
   if (!session.user.termsAccepted) redirect('/beta-terms')
 
   const workspaceData = await ensurePersonalWorkspace().then(() => getWorkspaceProjects())

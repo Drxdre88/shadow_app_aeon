@@ -3,7 +3,8 @@
 import { db } from '@/lib/db'
 import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
-import { requireAuth } from './helpers'
+import { requireAuth, requireVorath } from './helpers'
+import { canUseVorath } from '@/lib/vorath-access'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import {
   createMemorySchema,
@@ -70,7 +71,7 @@ async function verifyAnchors(
 }
 
 export async function getMemory(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return _findMemoryById(memoryId, userId)
 }
 
@@ -85,13 +86,15 @@ type ListMemoriesOpts = {
   includeArchived?: boolean
 }
 
+// Global quick-capture / reflection widgets read this on open: empty, not a throw, for non-Vorath users.
 export async function listMemoriesForUser(opts: ListMemoriesOpts = {}) {
   const userId = await requireAuth()
+  if (!canUseVorath(userId)) return []
   return _listMemories(userId, opts)
 }
 
 export async function createMemory(input: CreateMemoryInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = createMemorySchema.parse(input)
   await verifyAnchors(userId, parsed)
 
@@ -109,7 +112,7 @@ export async function createMemory(input: CreateMemoryInput) {
 }
 
 export async function updateMemory(memoryId: string, patch: UpdateMemoryInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = updateMemorySchema.parse(patch)
   await verifyAnchors(userId, parsed)
   const row = await _updateMemory(memoryId, userId, parsed, { origin: { kind: 'operator', via: 'ui' } })
@@ -118,13 +121,13 @@ export async function updateMemory(memoryId: string, patch: UpdateMemoryInput) {
 }
 
 export async function searchMemories(input: SearchMemoriesInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = searchMemoriesSchema.parse(input)
   return _searchMemoriesFts(userId, parsed)
 }
 
 export async function addLinkToMemory(memoryId: string, input: AddLinkInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = addLinkSchema.parse(input)
 
   // For memory-target links, the linked memory must be owned by the user.
@@ -147,14 +150,14 @@ export async function addLinkToMemory(memoryId: string, input: AddLinkInput) {
 }
 
 export async function removeLinkFromMemory(memoryId: string, linkIndex: number) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await _removeLink(memoryId, userId, linkIndex)
   if (!row) throw new Error('Memory or link not found')
   return row
 }
 
 export async function getMemoryNeighbours(memoryId: string, input: GetNeighboursInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = getNeighboursSchema.parse(input)
   // Verify ownership of the seed memory upfront — the recursive walk already
   // filters by user_id but failing fast gives a clearer error.
@@ -166,7 +169,7 @@ export async function getMemoryNeighbours(memoryId: string, input: GetNeighbours
 }
 
 export async function getMemoryBeliefTrail(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = getBeliefTrailSchema.parse({ id: memoryId })
   const trail = await _getBeliefTrail(parsed.id, userId)
   if (!trail) throw new Error('Memory not found or unauthorized')
@@ -174,7 +177,7 @@ export async function getMemoryBeliefTrail(memoryId: string) {
 }
 
 export async function deleteMemoryById(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const ok = await _deleteMemory(memoryId, userId)
   if (!ok) throw new Error('Memory not found or unauthorized')
   return { deleted: true }
@@ -184,7 +187,7 @@ export async function deleteMemoryById(memoryId: string) {
 // are filtered server-side to memory→memory links where both endpoints are
 // owned by the caller, so this never leaks foreign IDs.
 export async function getBrainGraph(opts: { realmId?: string; includeArchived?: boolean } = {}) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   if (opts.realmId) {
     await verifyAnchors(userId, { realmId: opts.realmId })
   }
@@ -193,14 +196,14 @@ export async function getBrainGraph(opts: { realmId?: string; includeArchived?: 
 
 // Kairos Phase 2 (E22) — today's auto-captures for the notes view.
 export async function getTodaysAutoCaptures(opts: { limit?: number } = {}) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return _listAutoCapturedToday(userId, opts.limit ?? 30)
 }
 
 // Kairos Phase 2 (E22) — Acknowledge an advisory (or any memory) by
 // soft-archiving it. The memory persists for retrospection.
 export async function archiveMemoryById(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await _archiveMemory(memoryId, userId)
   if (!row) throw new Error('Memory not found or unauthorized')
   return row

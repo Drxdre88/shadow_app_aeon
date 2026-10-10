@@ -20,6 +20,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { Tooltip } from './Tooltip'
 import { cn } from '@/lib/utils/cn'
+import { useVorath } from '@/hooks/useVorath'
 
 type Maturity = 'live' | 'beta' | 'preview'
 
@@ -145,6 +146,14 @@ const GROUPS: FeatureGroup[] = [
   },
 ]
 
+// Beta testers never see Vorath: no Vorath group, and the MCP blurb drops memories and Dominions.
+const PUBLIC_GROUPS: FeatureGroup[] = GROUPS.filter((g) => g.id !== 'kairos').map((g) => ({
+  ...g,
+  features: g.features.map((f) => (f.title.includes('MCP tools')
+    ? { ...f, description: 'Claude Code talks to Aeon natively. Manage boards and projects by voice or by chat.' }
+    : f)),
+}))
+
 const BETA_VERSION = 3
 const STORAGE_KEY = `aeon-beta-features-seen-v${BETA_VERSION}`
 
@@ -157,18 +166,19 @@ export function BetaFeaturesModal({ isOpen, onClose }: Props) {
   const mounted = useHasMounted()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
-  const [activeId, setActiveId] = useState(GROUPS[0].id)
-  const active = useMemo(() => GROUPS.find((g) => g.id === activeId) ?? GROUPS[0], [activeId])
+  const groups = useVorath() ? GROUPS : PUBLIC_GROUPS
+  const [activeId, setActiveId] = useState(groups[0].id)
+  const active = useMemo(() => groups.find((g) => g.id === activeId) ?? groups[0], [groups, activeId])
 
   const onKey = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      const idx = GROUPS.findIndex((g) => g.id === activeId)
-      const next = e.key === 'ArrowDown' ? (idx + 1) % GROUPS.length : (idx - 1 + GROUPS.length) % GROUPS.length
-      setActiveId(GROUPS[next].id)
+      const idx = groups.findIndex((g) => g.id === activeId)
+      const next = e.key === 'ArrowDown' ? (idx + 1) % groups.length : (idx - 1 + groups.length) % groups.length
+      setActiveId(groups[next].id)
       e.preventDefault()
     }
-  }, [activeId, onClose])
+  }, [groups, activeId, onClose])
 
   useEffect(() => {
     if (!isOpen) return
@@ -179,7 +189,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: Props) {
   if (!mounted || !isOpen) return null
 
   const accent = active.accent
-  const totalFeatures = GROUPS.reduce((n, g) => n + g.features.length, 0)
+  const totalFeatures = groups.reduce((n, g) => n + g.features.length, 0)
 
   return createPortal(
     <div
@@ -244,7 +254,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: Props) {
           </div>
 
           <nav className="flex-1 overflow-y-auto py-2 px-2">
-            {GROUPS.map((g) => {
+            {groups.map((g) => {
               const isActive = g.id === activeId
               return (
                 <button

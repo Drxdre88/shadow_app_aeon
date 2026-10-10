@@ -11,6 +11,7 @@ import { useFuseRequest } from './fuseRequestContext'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { useVorath } from '@/hooks/useVorath'
 import { ContextMenuButton } from './ContextMenuButton'
 import { listProjectsForTransfer, copyTaskToProject, moveTaskToProject } from '@/lib/actions/transfer'
 import { spawnSessionFromCard } from '@/lib/actions/hangar'
@@ -50,9 +51,10 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
 
   const task = tasks.find((t) => t.id === taskId)
   const projectColumns = columns.filter((c) => c.projectId === task?.projectId)
-  const aiEnabled = useHangarUiStore((s) => s.config.enabled)
+  const vorath = useVorath()
+  const aiEnabled = useHangarUiStore((s) => s.config.enabled) && vorath
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
-  const isAgentMission = Boolean(readHangarMission(task?.metadata))
+  const isAgentMission = vorath && Boolean(readHangarMission(task?.metadata))
   const missionLaunchable = isLaunchableMission(task?.metadata)
   // Card fusion: every OTHER multi-selected card fuses into this one.
   const fuseFrom = task && requestFuse ? fuseSources(task, selectedTaskIds, tasks) : []

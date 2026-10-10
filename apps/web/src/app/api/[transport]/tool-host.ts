@@ -1,9 +1,17 @@
 import { z } from 'zod'
 import type { McpServer, ServerContext, ToolAnnotations } from '@modelcontextprotocol/server'
-import type { Extra, ToolServer, ToolShape } from './tools/types'
+import { fail, type Extra, type ToolServer, type ToolShape } from './tools/types'
 import { ConfirmGate } from './confirm'
+import { canUseVorath } from '@/lib/vorath-access'
 
 type AnyCallback = (...args: unknown[]) => unknown
+
+type Run = (input: Record<string, unknown> | undefined, ctx: ServerContext) => Promise<never>
+
+function callerId(ctx: ServerContext): string | null {
+  const id = ctx.http?.authInfo?.extra?.userId
+  return typeof id === 'string' ? id : null
+}
 
 type ParsedTool = {
   name: string
@@ -38,14 +46,26 @@ export function extraFromContext(ctx: ServerContext): Extra {
   return { authInfo: ctx.http?.authInfo, signal: ctx.mcpReq.signal }
 }
 
+export type VorathGuard = { vorathTools?: ReadonlySet<string>; ownerTier?: boolean }
+
+const unknownTool = (name: string) => fail(`Tool ${name} not found`)
+
 export class ToolHost implements ToolServer {
+  private readonly vorathTools: ReadonlySet<string>
+  private readonly ownerTier: boolean
+
   constructor(
     private readonly server: McpServer,
-    private readonly gate: ConfirmGate = new ConfirmGate()
-  ) {}
+    private readonly gate: ConfirmGate = new ConfirmGate(),
+    guard: VorathGuard = {}
+  ) {
+    this.vorathTools = guard.vorathTools ?? new Set()
+    this.ownerTier = guard.ownerTier ?? true
+  }
 
   tool(...args: unknown[]): void {
     const spec = parseToolArgs(args)
+    if (this.vorathTools.has(spec.name) && !this.ownerTier) return
     const run = this.runner(spec)
     const config = {
       description: spec.description,
@@ -60,12 +80,18 @@ export class ToolHost implements ToolServer {
     }
   }
 
-  private runner(spec: ParsedTool) {
-    const invoke = (input: Record<string, unknown> | undefined, ctx: ServerContext) =>
+  private runner(spec: ParsedTool): Run {
+    const run = this.confirmed(spec)
+    if (!this.vorathTools.has(spec.name)) return run
+    return (input, ctx) => (canUseVorath(callerId(ctx)) ? run(input, ctx) : (unknownTool(spec.name) as never))
+  }
+
+  private confirmed(spec: ParsedTool): Run {
+    const invoke: Run = (input, ctx) =>
       (input === undefined ? spec.cb(extraFromContext(ctx)) : spec.cb(input, extraFromContext(ctx))) as never
     if (spec.annotations?.destructiveHint !== true) return invoke
     const title = spec.annotations.title ?? spec.name
-    return async (input: Record<string, unknown> | undefined, ctx: ServerContext) => {
+    return async (input, ctx) => {
       const verdict = await this.gate.check(title, input ?? {}, ctx)
       return verdict.proceed ? invoke(input, ctx) : (verdict.result as never)
     }

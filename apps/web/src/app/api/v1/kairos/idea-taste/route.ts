@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { readIdeaTaste } from '@/lib/data/idea-taste'
 import { getKairosIdeaTasteSchema } from '@/lib/data/validators/kairos-idea-taste'
@@ -11,6 +12,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const q = request.nextUrl.searchParams
     const parsed = getKairosIdeaTasteSchema.safeParse({ format: q.get('format') ?? undefined })

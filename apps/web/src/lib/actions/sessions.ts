@@ -1,6 +1,7 @@
 'use server'
 
-import { requireAuth, requireMemberAccess } from './helpers'
+import { requireAuth, requireVorath, requireMemberAccess } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import { z } from 'zod'
 import {
   spawnSessionSchema,
@@ -32,7 +33,7 @@ import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 // shell the CLI. If the worker isn't reachable the row stays in 'queued' and
 // the operator can retry — nothing else breaks.
 export async function spawnSessionAction(input: SpawnSessionInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = spawnSessionSchema.parse(input)
   const anchor = await resolveSessionAnchor(userId, { projectId: parsed.projectId, taskId: parsed.taskId })
   if (!anchor.ok) throw new Error(anchor.message)
@@ -71,7 +72,7 @@ export async function spawnSessionAction(input: SpawnSessionInput) {
 }
 
 export async function getSessionAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await findAgentSessionById(id, userId)
   if (!row) throw new Error('Session not found or unauthorized')
   return row
@@ -85,20 +86,23 @@ const missionStatusSchema = z.object({
 
 export async function getMissionSessionStatusAction(input: z.input<typeof missionStatusSchema>) {
   const { sessionId, projectId, taskId } = missionStatusSchema.parse(input)
-  await requireMemberAccess(projectId)
+  const { userId } = await requireMemberAccess(projectId)
+  assertVorath(userId)
   const row = await findMissionSessionStatus(sessionId, projectId, taskId)
   if (!row) throw new Error('Mission session not found')
   return row
 }
 
+// The sidebar's live-sessions button polls this for every user: empty for non-Vorath users.
 export async function listSessionsAction(input: ListSessionsInput = { liveOnly: false, limit: 20, offset: 0 }) {
   const userId = await requireAuth()
+  if (!canUseVorath(userId)) return []
   const parsed = listSessionsSchema.parse(input)
   return listAgentSessions(userId, parsed)
 }
 
 export async function updateSessionStatusAction(id: string, patch: UpdateSessionStatusInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = updateSessionStatusSchema.parse(patch)
   const row = await updateAgentSessionStatus(id, userId, parsed)
   if (!row) throw new Error('Session not found or unauthorized')
@@ -106,7 +110,7 @@ export async function updateSessionStatusAction(id: string, patch: UpdateSession
 }
 
 export async function recordSessionEventAction(id: string, input: RecordSessionEventInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
   const parsed = recordSessionEventSchema.parse(input)
@@ -114,7 +118,7 @@ export async function recordSessionEventAction(id: string, input: RecordSessionE
 }
 
 export async function getNextEventSeqAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
   return getNextEventSeq(id)
@@ -124,7 +128,7 @@ export async function getNextEventSeqAction(id: string) {
 // tail params go through the same bounded schema the MCP tool uses — an
 // unbounded limit would otherwise reach .limit() and pull a whole transcript.
 export async function listSessionEventsAction(id: string, opts: SessionEventsTailArgs = {}) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
   const parsed = sessionEventsTailArgsSchema.parse(opts)
@@ -132,7 +136,7 @@ export async function listSessionEventsAction(id: string, opts: SessionEventsTai
 }
 
 export async function killSessionAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
 

@@ -70,4 +70,18 @@ describe('cron/dominion-activity route', () => {
     }))
     expect(writeCronFailureTrace).toHaveBeenCalledTimes(1)
   })
+
+  it('leaves beta testers out of the run entirely', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('CRON_SECRET', 'cron-secret')
+    vi.stubEnv('VORATH_USER_IDS', 'u2')
+    try {
+      const body = await (await GET(request(['Bearer', 'cron-secret'].join(' ')))).json()
+      expect(body).toMatchObject({ ran: 1, users: [run('u2')] })
+      expect(scoreDominionActivityForUser).toHaveBeenCalledTimes(1)
+      expect(scoreDominionActivityForUser).not.toHaveBeenCalledWith('u1')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
 })

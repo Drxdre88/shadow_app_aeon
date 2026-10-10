@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireOwnership, requireEditor } from './helpers'
 import { createTaskSchema, updateTaskSchema, reorderTaskEntrySchema } from '@/lib/data/validators'
+import { withoutVorathTaskFields } from '@/lib/vorath-access'
 import { checkStorageLimit } from '@/lib/data/storage'
 import {
   findTasks as _findTasks,
@@ -93,7 +94,7 @@ export async function createBoardTask(data: {
     metadata: data.metadata,
   })
 
-  const task = await _createTask(data.projectId, parsed, data.id)
+  const task = await _createTask(data.projectId, withoutVorathTaskFields(userId, parsed), data.id)
 
   // Labels live in their own join table, so a card created with labels already
   // picked (quick-add, delete-undo) has to write them explicitly or they are

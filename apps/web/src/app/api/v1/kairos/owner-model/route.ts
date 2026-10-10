@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { readKairosOwnerModel, toKairosOwnerModelView } from '@/lib/data/kairos-owner-model'
 import { getKairosOwnerModelSchema } from '@/lib/data/validators/kairos-owner-model'
@@ -13,6 +14,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const q = request.nextUrl.searchParams
     const parsed = getKairosOwnerModelSchema.safeParse({ format: q.get('format') ?? undefined })

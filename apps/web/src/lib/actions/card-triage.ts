@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireEditor, requireMember, requireOwner } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import {
   findCardTriageBoard as _findCardTriageBoard,
   findTriageCard as _findTriageCard,
@@ -26,8 +27,10 @@ import {
 // Accept / Dismiss on each suggestion. Suggestions are never applied without
 // an Accept here.
 
+// Read by the board settings for every member: off, not a throw, outside Vorath.
 export async function getCardTriageSetting(projectId: string) {
   const userId = await requireMember(projectId)
+  if (!canUseVorath(userId)) return { on: false, canToggle: false }
   const board = await _findCardTriageBoard(projectId)
   if (!board) throw new Error('Project not found')
   return { on: isCardTriageOn(board.settings), canToggle: board.userId === userId }
@@ -35,6 +38,7 @@ export async function getCardTriageSetting(projectId: string) {
 
 export async function setCardTriage(projectId: string, on: boolean) {
   const userId = await requireOwner(projectId)
+  assertVorath(userId)
   const parsed = setCardTriageInputSchema.parse({ on })
   // Scoped to the board's creator in SQL: a realm owner or member of a
   // shared board can't switch sorting on for someone else's cards.
@@ -52,6 +56,7 @@ export async function resolveCardTriage(
   input: ResolveTriageInput,
 ): Promise<{ triage: CardTriage; applied: boolean }> {
   const userId = await requireEditor(projectId)
+  assertVorath(userId)
   const { kind, ref, decision } = resolveTriageInputSchema.parse(input)
 
   for (let attempt = 0; attempt < MAX_WRITE_TRIES; attempt++) {

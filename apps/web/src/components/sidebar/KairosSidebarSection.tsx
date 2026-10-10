@@ -11,6 +11,7 @@ import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
 import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 import { ConnectKairosModal } from '@/components/kairos/brain/ConnectKairosModal'
 import { requiredMissing } from '@/components/kairos/brain/setupProgress'
+import { useVorath } from '@/hooks/useVorath'
 
 const CACHE_MS = 10 * 60 * 1000
 let cached: { at: number; missing: number } | null = null
@@ -35,8 +36,12 @@ export function resetKairosSetupBadgeCache() {
 
 // Slim Kairos entry between the realm/nav body and the "New Project / New
 // Realm" actions: the version pill (links to /kairos) and one "Kairos setup"
-// button that opens the modal on its Setup checklist.
+// button that opens the modal on its Setup checklist. Owner-only: nothing renders for anyone else.
 export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
+  return useVorath() ? <KairosSidebarSectionBody collapsed={collapsed} /> : null
+}
+
+function KairosSidebarSectionBody({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname()
   const active = pathname?.startsWith('/vorath') ?? false
   const [open, setOpen] = useState(false)

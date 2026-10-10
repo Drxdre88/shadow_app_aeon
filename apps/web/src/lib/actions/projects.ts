@@ -26,6 +26,7 @@ import { createProjectSchema, updateProjectSchema, setProjectKairosFeedSchema } 
 import type { UpdateProjectInput, SetProjectKairosFeedInput } from '@/lib/data/validators'
 import { createDefaultColumns } from '@/lib/data/columns'
 import { captureProjectEvent } from '@/lib/kairos/auto-capture'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 
 export async function getProjects() {
   const userId = await requireAuth()
@@ -122,14 +123,19 @@ export async function updateProjectSettings(projectId: string, settings: Record<
   // other (e.g. saving sizing reverting a concurrent boardTheme change).
   // The merge happens in SQL — a JS read-modify-write has the same race it
   // is trying to prevent, just with a narrower window.
-  void userId
-  const project = await _mergeProjectSettings(projectId, settings)
+  const allowed = canUseVorath(userId)
+    ? settings
+    : Object.fromEntries(Object.entries(settings).filter(([key]) => !VORATH_SETTING_KEYS.has(key)))
+  const project = await _mergeProjectSettings(projectId, allowed)
   revalidatePath(`/project/${projectId}`)
   return project
 }
 
+// Vorath switches have their own owner-gated actions; the generic merge must not flip them.
+const VORATH_SETTING_KEYS = new Set(['kairosFeed', 'kairosTriage', 'kairosAiDone', 'kairosMissionCheck', 'hangar'])
+
 export async function setProjectKairosFeed(projectId: string, feed: SetProjectKairosFeedInput['feed']) {
-  await requireOwner(projectId)
+  assertVorath(await requireOwner(projectId))
   const parsed = setProjectKairosFeedSchema.parse({ feed })
   const project = await _setProjectKairosFeed(projectId, parsed.feed)
   if (!project) throw new Error('Project not found')

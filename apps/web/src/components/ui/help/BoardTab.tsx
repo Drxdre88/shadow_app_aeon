@@ -13,6 +13,7 @@ import {
   SquareCheck,
 } from 'lucide-react'
 import { Section, FeatureCard } from './shared'
+import { useVorath } from '@/hooks/useVorath'
 
 const BOARD_FEATURES = [
   {
@@ -58,6 +59,7 @@ const BOARD_FEATURES = [
 ]
 
 export function BoardTab() {
+  const vorath = useVorath()
   return (
     <div className="space-y-6">
       <p className="text-sm text-slate-300 leading-relaxed">
@@ -73,6 +75,7 @@ export function BoardTab() {
         </div>
       </Section>
 
+      {vorath && (<>
       <Section title="Vorath sorts new cards">
         <ul className="space-y-1.5 text-xs text-slate-400">
           <li>Off by default. The board&apos;s creator switches it on in Edit Project → &quot;Vorath sorts new cards&quot;.</li>
@@ -90,6 +93,7 @@ export function BoardTab() {
           <li>Tick the agent&apos;s recommended follow-ups and press Create mission cards to turn them into new cards.</li>
         </ul>
       </Section>
+      </>)}
 
       <Section title="Tips">
         <ul className="space-y-1.5 text-xs text-slate-400">

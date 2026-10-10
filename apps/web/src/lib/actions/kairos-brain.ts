@@ -19,7 +19,7 @@ import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 import { findOwnProjects } from '@/lib/data/projects'
 import { findDominionsByUser, listReposForUser, listRecentCaptureRepos } from '@/lib/data/dominions'
 import { parseKairosFeed, type KairosFeedMode } from '@/lib/kairos/board-feed-render'
-import { requireAuth } from './helpers'
+import { requireVorath } from './helpers'
 
 export interface KairosWatchedOverview {
   projects: Array<{ id: string; name: string; feed: KairosFeedMode | null; areaName: string | null }>
@@ -33,7 +33,7 @@ const UNMAPPED_WINDOW_MS = 14 * 86_400_000
 // nightly feed only runs for the owner), each area's core repos, and repos
 // recent captures named that resolve to no area.
 export async function getKairosWatchedOverview(): Promise<KairosWatchedOverview> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const [ownProjects, areas, repoRows, recent] = await Promise.all([
     findOwnProjects(userId),
     findDominionsByUser(userId),
@@ -72,7 +72,7 @@ async function resolveAppUrl(): Promise<string> {
 }
 
 export async function getKairosBrainStatus(): Promise<KairosBrainStatus> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await auth()
   const now = new Date()
   const routineFlagOn = telegramRoutineEnabled()
@@ -128,7 +128,7 @@ const TEST_MESSAGE_LIMIT = { windowMs: 60_000, maxRequests: 3 }
 // the operator chat on purpose: deliverKairosSpeak would file an inbox item,
 // spend the speak cadence and could arm awaiting-reply.
 export async function sendKairosTestMessage(): Promise<{ ok: boolean; error?: string }> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const session = await auth()
   if (!isKairosOperator(userId, session?.user?.role === 'admin')) {
     return { ok: false, error: `Only the ${MIND_NAME} operator can send a Telegram test.` }
@@ -153,12 +153,12 @@ export async function sendKairosTestMessage(): Promise<{ ok: boolean; error?: st
 // own API key; a job the Max routine missed waits for the next run. Same
 // validator + data fns as the MCP tools and /api/v1/kairos/paid-backup.
 export async function getPaidBackup(): Promise<{ enabled: boolean }> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return { enabled: await getPaidBackupSetting(userId) }
 }
 
 export async function setPaidBackup(enabled: boolean): Promise<{ enabled: boolean }> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = setKairosPaidBackupSchema.parse({ enabled })
   return { enabled: await setPaidBackupSetting(userId, parsed.enabled) }
 }

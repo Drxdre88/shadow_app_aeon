@@ -6,6 +6,7 @@ import { and, isNull, inArray } from 'drizzle-orm'
 import { runArchetypeSynthesisForUser } from '@/lib/kairos/archetypes'
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B1) — daily Archetype Synthesis cron endpoint.
@@ -34,10 +35,11 @@ function isAuthorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
-  const usersWithDominions = await db
+  const usersWithDominions = (await db
     .selectDistinct({ userId: dominions.userId })
     .from(dominions)
-    .where(isNull(dominions.archivedAt))
+    .where(isNull(dominions.archivedAt)))
+    .filter(({ userId }) => canUseVorath(userId))
 
   if (usersWithDominions.length === 0) {
     return jsonResponse({ ran: 0, users: [] })

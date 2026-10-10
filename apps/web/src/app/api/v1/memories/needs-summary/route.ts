@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { listMemoriesNeedingSummary } from '@/lib/data/memories'
 
@@ -7,6 +8,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const url = request.nextUrl
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 20)))

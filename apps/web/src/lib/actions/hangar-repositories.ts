@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireMemberAccess } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import {
   createHangarRepo,
   findHangarRepoById,
@@ -60,6 +61,7 @@ export async function getProjectHangarRepositoryRegistry(
   projectId: string,
 ): Promise<ProjectHangarRepositoryRegistry> {
   const { userId } = await requireMemberAccess(projectId)
+  if (!canUseVorath(userId)) return { realms: [], repositories: [] }
   const realmIds = await findProjectRealmIds(projectId)
   const memberships = await findGroupsForUser(userId)
   const membershipById = new Map(memberships.map((realm) => [realm.id, realm]))
@@ -106,6 +108,7 @@ export async function addProjectHangarRepository(
   input: CreateHangarRepoInput,
 ): Promise<void> {
   const { userId } = await requireMemberAccess(projectId)
+  assertVorath(userId)
   const parsed = createHangarRepoSchema.parse(input)
   await requireRegistryManager(projectId, parsed.realmId, userId)
   await createHangarRepo(parsed)
@@ -118,6 +121,7 @@ export async function editProjectHangarRepository(
   input: UpdateHangarRepoInput,
 ): Promise<void> {
   const { userId } = await requireMemberAccess(projectId)
+  assertVorath(userId)
   const existing = await findHangarRepoById(repoId)
   if (!existing) throw new Error('Repository not found')
   await requireRegistryManager(projectId, existing.realmId, userId)

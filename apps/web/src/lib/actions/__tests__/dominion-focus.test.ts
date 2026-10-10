@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
-vi.mock('../helpers', () => ({ requireAuth: vi.fn() }))
+vi.mock('../helpers', () => { const requireAuth = vi.fn(); return { requireAuth, requireVorath: requireAuth } })
 vi.mock('@/lib/data/dominion-focus', async () => {
   const { rankByActivity } = await vi.importActual<typeof import('@/lib/data/dominion-focus')>('@/lib/data/dominion-focus')
   return { rankByActivity, listLiveDominions: vi.fn(), setDominionPinned: vi.fn() }

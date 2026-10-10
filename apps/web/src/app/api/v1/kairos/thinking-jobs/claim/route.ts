@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { claimThinkingJobSchema } from '@/lib/data/validators/thinking'
 import { claimThinkingJob } from '@/lib/kairos/thinking/queue'
@@ -15,6 +16,8 @@ export const POST = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     let body: unknown = {}
     const raw = await request.text()

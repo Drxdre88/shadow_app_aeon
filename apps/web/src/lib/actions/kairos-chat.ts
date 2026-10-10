@@ -2,6 +2,7 @@
 
 import { z } from 'zod'
 import { safeAuth } from './helpers'
+import { canUseVorath } from '@/lib/vorath-access'
 import {
   createChatThread as _createChatThread,
   getChatThread as _getChatThread,
@@ -46,10 +47,17 @@ const threadIdSchema = z.object({
   threadId: z.string().uuid(),
 })
 
+// safeAuth's failure shape for anyone outside Vorath, so the UI shows the same friendly error.
+async function vorathAuth(): Promise<Awaited<ReturnType<typeof safeAuth>>> {
+  const auth = await safeAuth()
+  if (auth.ok && !canUseVorath(auth.userId)) return { ok: false, reason: 'unauthorized' }
+  return auth
+}
+
 export type KairosChatActionResult = KairosChatTurnResult | KairosChatPendingResult
 
 export async function startKairosThread(input: z.infer<typeof startSchema>): Promise<KairosChatActionResult> {
-  const auth = await safeAuth()
+  const auth = await vorathAuth()
   if (!auth.ok) return auth
   const userId = auth.userId
   const parsed = startSchema.safeParse(input)
@@ -70,7 +78,7 @@ export async function startKairosThread(input: z.infer<typeof startSchema>): Pro
 }
 
 export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Promise<KairosChatActionResult> {
-  const auth = await safeAuth()
+  const auth = await vorathAuth()
   if (!auth.ok) return auth
   const userId = auth.userId
   const parsed = sendSchema.safeParse(input)
@@ -85,7 +93,7 @@ export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Prom
 // error boundary.
 
 export async function listKairosThreads(input: z.infer<typeof listSchema> = {}) {
-  const auth = await safeAuth()
+  const auth = await vorathAuth()
   if (!auth.ok) return []
   const parsed = listSchema.safeParse(input)
   if (!parsed.success) return []
@@ -93,7 +101,7 @@ export async function listKairosThreads(input: z.infer<typeof listSchema> = {}) 
 }
 
 export async function loadKairosThread(input: z.infer<typeof threadIdSchema>) {
-  const auth = await safeAuth()
+  const auth = await vorathAuth()
   if (!auth.ok) return null
   const parsed = threadIdSchema.safeParse(input)
   if (!parsed.success) return null
@@ -101,7 +109,7 @@ export async function loadKairosThread(input: z.infer<typeof threadIdSchema>) {
 }
 
 export async function archiveKairosThread(input: z.infer<typeof threadIdSchema>) {
-  const auth = await safeAuth()
+  const auth = await vorathAuth()
   if (!auth.ok) return { ok: false as const }
   const parsed = threadIdSchema.safeParse(input)
   if (!parsed.success) return { ok: false as const }

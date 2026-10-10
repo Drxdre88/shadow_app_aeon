@@ -4,7 +4,7 @@ vi.mock('next-auth', () => ({ default: vi.fn() }))
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('next/headers', () => ({ headers: vi.fn() }))
-vi.mock('../helpers', () => ({ requireAuth: vi.fn() }))
+vi.mock('../helpers', () => { const requireAuth = vi.fn(); return { requireAuth, requireVorath: requireAuth } })
 vi.mock('@/lib/data/brain-status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/data/brain-status')>()
   return { ...actual, listBrainJobsSince: vi.fn(), getSetupSignals: vi.fn() }

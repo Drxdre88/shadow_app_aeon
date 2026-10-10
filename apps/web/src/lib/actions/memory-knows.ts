@@ -1,7 +1,7 @@
 'use server'
 
 import { z } from 'zod'
-import { requireAuth } from './helpers'
+import { requireVorath } from './helpers'
 import { findMemoryById, updateMemory as _updateMemory } from '@/lib/data/memories'
 import {
   confirmMemoryAsOwner,
@@ -45,17 +45,17 @@ async function ownedRow(userId: string, memoryId: string): Promise<NonNullable<R
 }
 
 export async function listWhatVorathKnows() {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return listKnownRows(userId)
 }
 
 export async function listNeedsYourEyes() {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return listNeedsEyes(userId)
 }
 
 export async function getMemoryWhy(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const why = await getMemoryProvenance(userId, idSchema.parse(memoryId))
   if (!why) throw new Error('Memory not found')
   return why
@@ -65,7 +65,7 @@ export async function getMemoryWhy(memoryId: string) {
 // origin. That path never raises trust on its own: an agent-written row stays
 // labelled agent until the owner also confirms it.
 export async function editMemoryInPlace(memoryId: string, input: { title: string; bodyMd: string }) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await ownedRow(userId, memoryId)
   const refusal = protectedRefusal(row) ?? (row.type === 'belief' || row.streamClass === 'belief' ? BELIEF_EDIT_REFUSAL : null)
   if (refusal) throw new Error(refusal)
@@ -76,7 +76,7 @@ export async function editMemoryInPlace(memoryId: string, input: { title: string
 }
 
 export async function markMemoryWrong(memoryId: string, reason: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await ownedRow(userId, memoryId)
   const refusal = protectedRefusal(row)
   if (refusal) throw new Error(refusal)
@@ -90,7 +90,7 @@ export async function removeNeedsEyesMemory(memoryId: string) {
 }
 
 export async function confirmMemory(memoryId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await ownedRow(userId, memoryId)
   const refusal = protectedRefusal(row)
   if (refusal) throw new Error(refusal)
@@ -100,7 +100,7 @@ export async function confirmMemory(memoryId: string) {
 }
 
 export async function undoMemoryChange(opId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const result = await revertMemoryOp(userId, idSchema.parse(opId), { reason: 'owner undo from the memory panel' })
   if (!result.ok) {
     const copy: Record<typeof result.reason, string> = {
@@ -116,11 +116,11 @@ export async function undoMemoryChange(opId: string) {
 }
 
 export async function getSensitiveGateSetting() {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return getSensitiveGate(userId)
 }
 
 export async function setSensitiveGateSetting(enabled: boolean) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return setSensitiveGate(userId, z.boolean().parse(enabled))
 }

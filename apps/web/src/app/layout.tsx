@@ -76,8 +76,12 @@ export default async function RootLayout({
             <ToastContainer />
             <ServiceWorkerRegistration />
             <CommandPalette />
-            <QuickCaptureOverlay />
-            <CaptureFab />
+            {session?.user?.vorath === true && (
+              <>
+                <QuickCaptureOverlay />
+                <CaptureFab />
+              </>
+            )}
             {children}
           </ThemeProvider>
           </PreferencesProvider>

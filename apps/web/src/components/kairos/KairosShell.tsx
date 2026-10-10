@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { useSidebarStore } from '@/stores/sidebarStore'
 import { KairosVisor } from '@/components/kairos/KairosVisor'
 import { KairosVisorToggle } from '@/components/kairos/KairosVisorToggle'
+import { useVorath } from '@/hooks/useVorath'
 
 interface WorkspaceData {
   groupId: string
@@ -33,6 +34,7 @@ interface KairosShellProps {
 
 export function KairosShell({ user, initialWorkspaces, children }: KairosShellProps) {
   const { collapsed, hiddenRealmIds, hiddenProjectIds } = useSidebarStore()
+  const vorath = useVorath()
 
   const sidebarRealms = useMemo(
     () =>
@@ -66,8 +68,12 @@ export function KairosShell({ user, initialWorkspaces, children }: KairosShellPr
       >
         {children}
       </div>
-      <KairosVisor />
-      <KairosVisorToggle />
+      {vorath && (
+        <>
+          <KairosVisor />
+          <KairosVisorToggle />
+        </>
+      )}
     </div>
   )
 }

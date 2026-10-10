@@ -54,6 +54,7 @@ import type { RegisterFn, ToolServer } from './tools/types'
 import { installTodayUseTracking, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
 import { MCP_PROFILES, parseProfile, profileGate, type McpProfile, type SlimProfile } from './profiles'
 import { ToolHost } from './tool-host'
+import { canUseVorath } from '@/lib/vorath-access'
 
 const MCP_TRANSPORT = 'mcp'
 const SERVER_INFO = { name: 'aeon', version: '2.0.0' }
@@ -124,30 +125,67 @@ const TOOL_GROUPS: readonly ToolGroup[] = [
   [registerKairosCockpitTools, ['vorath']],
 ]
 
-function registerTools(server: ToolServer, profile: McpProfile) {
+// PM-core is every group the board profile carries; everything else is Vorath,
+// the owner's private brain. One PM-core tool is Vorath too and is named here.
+const VORATH_TOOLS_IN_CORE_GROUPS = ['set_project_kairos_feed']
+
+const isCoreGroup = (profiles: readonly SlimProfile[]) => profiles.includes('board')
+
+class ToolNameCollector implements ToolServer {
+  readonly names = new Set<string>(VORATH_TOOLS_IN_CORE_GROUPS)
+
+  tool(...args: unknown[]): void {
+    this.names.add(String(args[0]))
+  }
+}
+
+let vorathNames: ReadonlySet<string> | null = null
+
+function vorathToolNames(): ReadonlySet<string> {
+  if (vorathNames) return vorathNames
+  const collector = new ToolNameCollector()
+  for (const [register, profiles] of TOOL_GROUPS) if (!isCoreGroup(profiles)) register(collector)
+  vorathNames = collector.names
+  return vorathNames
+}
+
+function registerTools(server: ToolServer, profile: McpProfile, owner: boolean) {
   installTodayUseTracking(server)
   const on = profileGate(profile)
-  for (const [register, profiles] of TOOL_GROUPS) if (on(...profiles)) register(server)
+  for (const [register, profiles] of TOOL_GROUPS) {
+    if (on(...profiles) && (owner || isCoreGroup(profiles))) register(server)
+  }
 }
 
-function buildProfileHandler(profile: McpProfile) {
-  const mcpHandler = createMcpHandler(
-    (mcpServer) => registerTools(new ToolHost(mcpServer), profile),
+function buildHandler(profile: McpProfile, owner: boolean) {
+  const guard = { vorathTools: vorathToolNames(), ownerTier: owner }
+  return createMcpHandler(
+    (mcpServer) => registerTools(new ToolHost(mcpServer, undefined, guard), profile, owner),
     { serverInfo: SERVER_INFO, verboseLogs: false }
   )
-  return withMcpAuth(mcpHandler, verifyToken, { required: true })
 }
 
-const profileHandlers = new Map<McpProfile, (req: Request) => Promise<Response>>()
+const tierHandlers = new Map<string, (req: Request) => Promise<Response>>()
 
-function handlerFor(profile: McpProfile) {
-  let h = profileHandlers.get(profile)
+function handlerFor(profile: McpProfile, owner: boolean) {
+  const key = `${profile}:${owner ? 'owner' : 'core'}`
+  let h = tierHandlers.get(key)
   if (!h) {
-    h = buildProfileHandler(profile)
-    profileHandlers.set(profile, h)
+    h = buildHandler(profile, owner)
+    tierHandlers.set(key, h)
   }
   return h
 }
+
+// mcp-handler sets req.auth after verifyToken and before the wrapped handler,
+// so the caller's tier is picked per request, never by role.
+async function dispatch(req: Request): Promise<Response> {
+  const profile = parseProfile(new URL(req.url)) ?? 'all'
+  const userId = (req as Request & { auth?: AuthInfo }).auth?.extra?.userId
+  return handlerFor(profile, canUseVorath(typeof userId === 'string' ? userId : null))(req)
+}
+
+const authedDispatch = withMcpAuth(dispatch, verifyToken, { required: true })
 
 function notFound() {
   return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
@@ -170,7 +208,7 @@ async function handler(req: Request, ctx: { params: Promise<{ transport: string 
   const url = new URL(req.url)
   const profile = parseProfile(url)
   if (!profile) return unknownProfile(url.searchParams.get('profile'))
-  return handlerFor(profile)(req)
+  return authedDispatch(req)
 }
 
 // The Max-plan thinking routine claims jobs through MCP; a Sunday claim plans

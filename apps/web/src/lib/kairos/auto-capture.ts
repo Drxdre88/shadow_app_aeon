@@ -6,6 +6,7 @@ import type { MemoryType } from '@/lib/data/validators'
 import { parseKairosFeed, trimText } from './board-feed-render'
 import { captureBoardCardDone } from './board-feed'
 import { noteKairosBreak } from './moment/gate/note'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A3 / A4) — auto-capture helpers.
@@ -37,6 +38,7 @@ export interface BoardEventInput {
 }
 
 export async function captureBoardEvent(input: BoardEventInput) {
+  if (!canUseVorath(input.userId)) return
   if (input.action === 'completed') noteKairosBreak(input.userId, 'card_closed')
   const project = input.action === 'created' || input.action === 'deleted' ? null : await loadFeedProject(input.projectId)
   const feed = project ? parseKairosFeed(project.settings) : null
@@ -164,6 +166,7 @@ export interface ProjectEventInput {
 }
 
 export async function captureProjectEvent(input: ProjectEventInput) {
+  if (!canUseVorath(input.userId)) return
   const name = input.projectName?.trim() || '(untitled project)'
 
   const lines: string[] = [`Project **${name}** ${input.action}.`]

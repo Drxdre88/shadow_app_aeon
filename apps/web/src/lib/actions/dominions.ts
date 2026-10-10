@@ -1,6 +1,6 @@
 'use server'
 
-import { requireAuth } from './helpers'
+import { requireVorath } from './helpers'
 import {
   createDominionSchema,
   updateDominionSchema,
@@ -31,25 +31,25 @@ import {
 } from '@/lib/data/dominions'
 
 export async function getDominions() {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return findDominionsByUser(userId)
 }
 
 export async function getDominion(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await findDominionById(id, userId)
   if (!row) throw new Error('Dominion not found or unauthorized')
   return row
 }
 
 export async function createDominionAction(input: CreateDominionInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = createDominionSchema.parse(input)
   return _createDominion(userId, parsed)
 }
 
 export async function updateDominionAction(id: string, patch: UpdateDominionInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = updateDominionSchema.parse(patch)
   const row = await _updateDominion(id, userId, parsed)
   if (!row) throw new Error('Dominion not found or unauthorized')
@@ -57,26 +57,26 @@ export async function updateDominionAction(id: string, patch: UpdateDominionInpu
 }
 
 export async function deleteDominionAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const ok = await _deleteDominion(id, userId)
   if (!ok) throw new Error('Dominion not found or unauthorized')
   return { deleted: true }
 }
 
 export async function getDominionReposAction(dominionId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return listDominionRepos(dominionId, userId)
 }
 
 export async function addDominionRepoAction(input: AddDominionRepoInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = addDominionRepoSchema.parse(input)
   const row = await _addDominionRepo(parsed.dominionId, userId, parsed.repoSlug)
   return row
 }
 
 export async function removeDominionRepoAction(input: AddDominionRepoInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = addDominionRepoSchema.parse(input)
   const ok = await _removeDominionRepo(parsed.dominionId, userId, parsed.repoSlug)
   if (!ok) throw new Error('Repo mapping not found or unauthorized')
@@ -85,19 +85,19 @@ export async function removeDominionRepoAction(input: AddDominionRepoInput) {
 
 // Kairos Phase 1 (C12 / 1.5) — inspection + objectives CRUD for the edit drawer.
 export async function inspectDominionAction(dominionId: string, memoryLimit?: number) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await _inspectDominion(dominionId, userId, { memoryLimit })
   if (!row) throw new Error('Dominion not found or unauthorized')
   return row
 }
 
 export async function listObjectivesAction(dominionId: string, includeArchived = false) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return _listDominionObjectives(dominionId, userId, { includeArchived })
 }
 
 export async function createObjectiveAction(input: CreateDominionObjectiveInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = createDominionObjectiveSchema.parse(input)
   const row = await _createDominionObjective(userId, parsed)
   if (!row) throw new Error('Dominion not found or unauthorized')
@@ -105,7 +105,7 @@ export async function createObjectiveAction(input: CreateDominionObjectiveInput)
 }
 
 export async function updateObjectiveAction(id: string, patch: UpdateDominionObjectiveInput) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = updateDominionObjectiveSchema.parse(patch)
   const row = await _updateDominionObjective(id, userId, parsed)
   if (!row) throw new Error('Objective not found or unauthorized')
@@ -113,14 +113,14 @@ export async function updateObjectiveAction(id: string, patch: UpdateDominionObj
 }
 
 export async function archiveObjectiveAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const row = await _archiveDominionObjective(id, userId)
   if (!row) throw new Error('Objective not found or unauthorized')
   return row
 }
 
 export async function deleteObjectiveAction(id: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const ok = await _deleteDominionObjective(id, userId)
   if (!ok) throw new Error('Objective not found or unauthorized')
   return { deleted: true }

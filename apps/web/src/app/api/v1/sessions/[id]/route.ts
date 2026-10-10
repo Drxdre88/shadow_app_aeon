@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { updateSessionStatusSchema } from '@/lib/data/validators'
 import { findAgentSessionById, updateAgentSessionStatus } from '@/lib/data/sessions'
@@ -18,6 +19,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!sessionIdSchema.safeParse(id).success) return jsonError('Session not found', 404)
 
@@ -32,6 +35,8 @@ export const PATCH = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!sessionIdSchema.safeParse(id).success) return jsonError('Session not found', 404)
 

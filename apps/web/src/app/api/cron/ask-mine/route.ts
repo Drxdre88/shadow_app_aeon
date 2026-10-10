@@ -4,6 +4,7 @@ import { runAskMineForUser, sweepExpiredKairosAsks, type AskMineRunResult } from
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import type { NextRequest } from 'next/server'
+import { canUseVorath } from '@/lib/vorath-access'
 
 export const maxDuration = 300
 
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const startedAt = Date.now()
   const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
-  const userIds = await listChatDistillEligibleUserIds()
+  const userIds = (await listChatDistillEligibleUserIds()).filter((userId) => canUseVorath(userId))
   const users: Array<{ userId: string; result?: AskMineRunResult; expiredAsks?: number; error?: string }> = []
   const skippedUserIds: string[] = []
   const paidBackupOff: string[] = []

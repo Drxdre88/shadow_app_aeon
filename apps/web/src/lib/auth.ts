@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
 import { hasValidPendingInvite, resolveUserPendingInvites } from '@/lib/data/workspaces'
 import { applyDefaultTemplateToUser } from '@/lib/data/settingsTemplates'
+import { canUseVorath } from '@/lib/vorath-access'
 
 declare module 'next-auth' {
   interface Session {
@@ -15,6 +16,7 @@ declare module 'next-auth' {
       id: string
       role: string
       termsAccepted: boolean
+      vorath: boolean
       name?: string | null
       email?: string | null
       image?: string | null
@@ -138,6 +140,7 @@ const nextAuth = NextAuth({
         id: user.id,
         role: (user as unknown as Record<string, unknown>).role as string || 'user',
         termsAccepted: !!(user as unknown as Record<string, unknown>).termsAcceptedAt,
+        vorath: canUseVorath(user.id),
       },
     }),
   },

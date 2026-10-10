@@ -1,5 +1,6 @@
 import { revalidatePath } from 'next/cache'
 import { requireEditor } from './helpers'
+import { assertVorath } from '@/lib/vorath-access'
 import {
   hangarCardMetadataSchema,
   HANGAR_MODEL_RE,
@@ -142,6 +143,7 @@ export async function launchCardMission(
   override: LaunchOverride | null,
 ) {
   const userId = await requireEditor(projectId)
+  assertVorath(userId)
 
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')

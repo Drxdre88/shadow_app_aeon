@@ -7,7 +7,7 @@ const m = vi.hoisted(() => ({
   listKairosPromises: vi.fn(),
 }))
 
-vi.mock('@/lib/actions/helpers', () => ({ requireAuth: m.requireAuth }))
+vi.mock('@/lib/actions/helpers', () => ({ requireAuth: m.requireAuth, requireVorath: m.requireAuth }))
 vi.mock('@/lib/kairos/promises/close', () => ({
   closeKairosPromise: m.closeKairosPromise,
   renegotiateKairosPromise: m.renegotiateKairosPromise,

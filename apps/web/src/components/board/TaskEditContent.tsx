@@ -22,6 +22,7 @@ import { triggerCelebration } from '@/components/celebrations'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { readHangarMission } from './autoRun'
 import { MissionDetailsSection } from './MissionDetailsSection'
+import { useVorath } from '@/hooks/useVorath'
 import { TriageSuggestions } from './triage/TriageSuggestions'
 
 export interface TaskEditFormData {
@@ -99,6 +100,7 @@ export function TaskEditContent({
   const priorities = useThemeStore((s) => s.priorities)
   const sizing = useBoardSizing()
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
+  const vorath = useVorath()
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
 
   const {
@@ -169,7 +171,7 @@ export function TaskEditContent({
           {headerActions}
         </div>
 
-        {editingTaskId && currentTask && isAgentMission && (
+        {editingTaskId && currentTask && isAgentMission && vorath && (
           <MissionDetailsSection
             taskId={editingTaskId}
             projectId={projectId}
@@ -178,7 +180,7 @@ export function TaskEditContent({
           />
         )}
 
-        {editingTaskId && <TriageSuggestions taskId={editingTaskId} projectId={projectId} onPriorityAccepted={(priority) => onFormChange({ ...formData, priority })} />}
+        {editingTaskId && vorath && <TriageSuggestions taskId={editingTaskId} projectId={projectId} onPriorityAccepted={(priority) => onFormChange({ ...formData, priority })} />}
 
         <div>
           <label className="block text-sm text-slate-400 mb-1.5">{isAgentMission ? 'Card notes' : 'Description'}</label>
